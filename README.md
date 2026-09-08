@@ -1,5 +1,5 @@
 # Exp - 6(AAI) - Solving a Stochastic Grid-World Markov Decision Process Using Value Iteration and Policy Iteration
-## By Dr. N SARAVANAN, TSML006,ASSISTANT PROFESSOR,AIML,SEC
+
 A compact Python implementation of two dynamic-programming methods for solving a stochastic grid-world Markov decision process (MDP):
 
 - **Value Iteration**
@@ -157,6 +157,370 @@ Example output:
  ['UP' 'UP' 'UP' 'TRAP']
  ['UP' 'LEFT' 'LEFT' 'LEFT']]
 ```
+### Program:
+
+```python
+import numpy as np
+
+# ============================================================
+# EXPERIMENT 6 - SOLVING STOCHASTIC GRID-WORLD MDP
+# USING VALUE ITERATION AND POLICY ITERATION
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Grid Configuration
+# ------------------------------------------------------------
+
+rows, cols = 3, 4
+
+# Rewards
+R = np.full((rows, cols), -0.04)
+
+# Goal and Trap
+R[2, 3] = 1.0
+R[1, 3] = -1.0
+
+# Terminal states
+terminals = [(2, 3), (1, 3)]
+
+# Available actions
+actions = ["UP", "DOWN", "LEFT", "RIGHT"]
+
+# Discount factor and convergence threshold
+gamma = 1.0
+epsilon = 1e-4
+
+
+# ------------------------------------------------------------
+# 2. Movement Rules
+# ------------------------------------------------------------
+
+def get_next_state(r, c, action):
+
+    if action == "UP":
+        next_r, next_c = r + 1, c
+
+    elif action == "DOWN":
+        next_r, next_c = r - 1, c
+
+    elif action == "LEFT":
+        next_r, next_c = r, c - 1
+
+    elif action == "RIGHT":
+        next_r, next_c = r, c + 1
+
+    # Boundary check
+    if not (0 <= next_r < rows and 0 <= next_c < cols):
+        return r, c
+
+    # Blocked cell
+    if next_r == 1 and next_c == 1:
+        return r, c
+
+    return next_r, next_c
+
+
+# ------------------------------------------------------------
+# 3. Stochastic Movement Model
+# ------------------------------------------------------------
+
+def get_action_distribution(action):
+
+    if action == "UP":
+        return "UP", "LEFT", "RIGHT"
+
+    elif action == "DOWN":
+        return "DOWN", "RIGHT", "LEFT"
+
+    elif action == "LEFT":
+        return "LEFT", "DOWN", "UP"
+
+    elif action == "RIGHT":
+        return "RIGHT", "UP", "DOWN"
+
+
+# ------------------------------------------------------------
+# 4. Expected Utility
+# ------------------------------------------------------------
+
+def expected_utility(U, r, c, action):
+
+    intended, left, right = get_action_distribution(action)
+
+    # Intended movement
+    ri, ci = get_next_state(r, c, intended)
+
+    # Left drift
+    rl, cl = get_next_state(r, c, left)
+
+    # Right drift
+    rr, cr = get_next_state(r, c, right)
+
+    # Probability:
+    # 0.8 -> intended
+    # 0.1 -> left drift
+    # 0.1 -> right drift
+
+    return (
+        0.8 * U[ri, ci]
+        + 0.1 * U[rl, cl]
+        + 0.1 * U[rr, cr]
+    )
+
+
+# ============================================================
+# 5. VALUE ITERATION
+# ============================================================
+
+def value_iteration(gamma=1.0, epsilon=1e-4):
+
+    # Initial utilities
+    U = np.zeros((rows, cols))
+
+    # Keep terminal utilities fixed
+    for r, c in terminals:
+        U[r, c] = R[r, c]
+
+    iterations = 0
+
+    while True:
+
+        U_next = U.copy()
+        delta = 0.0
+
+        for r in range(rows):
+            for c in range(cols):
+
+                # Do not update terminal states
+                if (r, c) in terminals:
+                    continue
+
+                # Find maximum expected utility
+                best_action_value = max(
+                    expected_utility(U, r, c, action)
+                    for action in actions
+                )
+
+                # Bellman update
+                U_next[r, c] = (
+                    R[r, c]
+                    + gamma * best_action_value
+                )
+
+                delta = max(
+                    delta,
+                    abs(U_next[r, c] - U[r, c])
+                )
+
+        U = U_next
+        iterations += 1
+
+        # Stop when converged
+        if delta < epsilon:
+            break
+
+    return U, extract_policy(U), iterations
+
+
+# ============================================================
+# 6. EXTRACT GREEDY POLICY
+# ============================================================
+
+def extract_policy(U):
+
+    policy = {}
+
+    for r in range(rows):
+        for c in range(cols):
+
+            if (r, c) in terminals:
+
+                if (r, c) == (2, 3):
+                    policy[(r, c)] = "GOAL"
+                else:
+                    policy[(r, c)] = "TRAP"
+
+                continue
+
+            # Choose action having maximum expected utility
+            policy[(r, c)] = max(
+                actions,
+                key=lambda action:
+                expected_utility(U, r, c, action)
+            )
+
+    return policy
+
+
+# ============================================================
+# 7. POLICY ITERATION
+# ============================================================
+
+def policy_iteration(gamma=1.0, epsilon=1e-4):
+
+    # Initial utilities
+    U = np.zeros((rows, cols))
+
+    # Terminal utilities
+    for r, c in terminals:
+        U[r, c] = R[r, c]
+
+    # Initial arbitrary policy
+    policy = {}
+
+    for r in range(rows):
+        for c in range(cols):
+
+            if (r, c) == (2, 3):
+                policy[(r, c)] = "GOAL"
+
+            elif (r, c) == (1, 3):
+                policy[(r, c)] = "TRAP"
+
+            else:
+                policy[(r, c)] = "UP"
+
+    iterations = 0
+
+    while True:
+
+        # ----------------------------------------------------
+        # Policy Evaluation
+        # ----------------------------------------------------
+
+        while True:
+
+            U_next = U.copy()
+            delta = 0.0
+
+            for r in range(rows):
+                for c in range(cols):
+
+                    if (r, c) in terminals:
+                        continue
+
+                    action = policy[(r, c)]
+
+                    U_next[r, c] = (
+                        R[r, c]
+                        + gamma *
+                        expected_utility(
+                            U, r, c, action
+                        )
+                    )
+
+                    delta = max(
+                        delta,
+                        abs(U_next[r, c] - U[r, c])
+                    )
+
+            U = U_next
+
+            if delta < epsilon:
+                break
+
+        # ----------------------------------------------------
+        # Policy Improvement
+        # ----------------------------------------------------
+
+        policy_stable = True
+
+        for r in range(rows):
+            for c in range(cols):
+
+                if (r, c) in terminals:
+                    continue
+
+                old_action = policy[(r, c)]
+
+                best_action = max(
+                    actions,
+                    key=lambda action:
+                    expected_utility(
+                        U, r, c, action
+                    )
+                )
+
+                policy[(r, c)] = best_action
+
+                if best_action != old_action:
+                    policy_stable = False
+
+        iterations += 1
+
+        # Stop if policy no longer changes
+        if policy_stable:
+            break
+
+    return U, policy, iterations
+
+
+# ============================================================
+# 8. DISPLAY FUNCTION
+# ============================================================
+
+def display_results(U, policy, title, iterations):
+
+    print("\n" + "=" * 60)
+    print(title)
+    print("=" * 60)
+
+    print("\nFinal Utility Table:")
+
+    utility_grid = np.flipud(U)
+
+    print(np.round(utility_grid, 3))
+
+    print("\nExtracted Policy:")
+
+    policy_grid = np.empty(
+        (rows, cols),
+        dtype=object
+    )
+
+    for r in range(rows):
+        for c in range(cols):
+            policy_grid[r, c] = policy[(r, c)]
+
+    print(np.flipud(policy_grid))
+
+    print("\nNumber of iterations:", iterations)
+
+
+# ============================================================
+# 9. RUN VALUE ITERATION
+# ============================================================
+
+U_value, policy_value, value_iterations = \
+    value_iteration(gamma, epsilon)
+
+display_results(
+    U_value,
+    policy_value,
+    "VALUE ITERATION",
+    value_iterations
+)
+
+
+# ============================================================
+# 10. RUN POLICY ITERATION
+# ============================================================
+
+U_policy, policy_policy, policy_iterations = \
+    policy_iteration(gamma, epsilon)
+
+display_results(
+    U_policy,
+    policy_policy,
+    "POLICY ITERATION",
+    policy_iterations
+)
+```
+
+### Output
+
+<img width="655" height="622" alt="image" src="https://github.com/user-attachments/assets/5cb33bb5-9b8d-4052-b0a8-0320d7c34ade" />
+
 
 ### Value iteration (default)
 
